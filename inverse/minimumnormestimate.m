@@ -105,8 +105,12 @@ origpos    = dip.pos;
 % select only the dipole positions inside the brain for scanning
 dip.pos    = dip.pos(originside,:);
 dip.inside = true(size(dip.pos,1),1);
-if isfield(dip, 'mom'),
-  dip.mom = dip.mom(:,originside);
+if isfield(dip, 'mom')
+    if size(dip.mom,2)==3
+        dip.mom = dip.mom(originside,:);
+    else
+        dip.mom = dip.mom(:,originside);
+    end
 end
 if isfield(dip, 'leadfield')
   hasleadfield = 1;
@@ -133,7 +137,11 @@ else
   if isfield(dip, 'mom')
     for i=size(dip.pos,1)
       % compute the leadfield for a fixed dipole orientation
-      dip.leadfield{i} = ft_compute_leadfield(dip.pos(i,:), grad, headmodel, 'reducerank', reducerank, 'normalize', normalize, 'normalizeparam', normalizeparam) * dip.mom(:,i);
+      if size(dip.mom,2)==3
+          dip.leadfield{i} = ft_compute_leadfield(dip.pos(i,:), grad, headmodel, 'reducerank', reducerank, 'normalize', normalize, 'normalizeparam', normalizeparam) * dip.mom(i,:);
+      else
+          dip.leadfield{i} = ft_compute_leadfield(dip.pos(i,:), grad, headmodel, 'reducerank', reducerank, 'normalize', normalize, 'normalizeparam', normalizeparam) * dip.mom(:,i);
+      end
     end
   else
     
@@ -172,8 +180,8 @@ if ~hasfilter
     n = n + size(dip.leadfield{i}, 2);
   end
   
-  % Take the rieal part of the noise cross-spectral density matrix
-  if isreal(noisecov) == 0
+  % Take the real part of the noise cross-spectral density matrix
+  if ~isreal(noisecov)
     fprintf('Taking the real part of the noise cross-spectral density matrix\n');
     noisecov = real(noisecov);
   end
@@ -196,19 +204,20 @@ if ~hasfilter
     R = sourcecov;
     C = noisecov;
     
-    if dowhiten,
+    if dowhiten
       fprintf('prewhitening the leadfields using the noise covariance\n');
       
       % compute the prewhitening matrix
       if ~isempty(noiselambda)
         fprintf('using a regularized noise covariance matrix\n');
         % note: if different channel types are present, one should probably load the diagonal with channel-type specific stuff
-        [U,S,V] = svd(C+eye(size(C))*noiselambda);
+        [U,S,~] = svd(C+eye(size(C))*noiselambda);
       else
-        [U,S,V] = svd(C);
+        [U,S,~] = svd(C);
       end
       
-      Tol     = 1e-12;
+      Tol     = 1e-6;
+%       Tol     = 1e-12;
       diagS   = diag(S);
       sel     = find(diagS>Tol.*diagS(1));
       P       = diag(1./sqrt(diag(S(sel,sel))))*U(:,sel)'; % prewhitening matrix
@@ -234,7 +243,7 @@ if ~hasfilter
       lambda = trace(A * R * A')/(trace(C)*snr^2);
     end
     
-    if dowhiten,
+    if dowhiten
       % as documented on MNE website, this is replacing the part of the code below, it gives
       % more stable results numerically.
       Rc      = chol(R, 'lower');
